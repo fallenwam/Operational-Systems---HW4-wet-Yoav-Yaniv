@@ -1,9 +1,9 @@
 // Basic Malloc + free
 #include <iostream>
 #include <unistd.h>
+#include <cstring>
 
 const int MAX_SIZE = 100000000;
-MallocMetadata* firstMeta = nullptr;
 
 size_t free_blocks = 0;
 size_t free_bytes = 0;
@@ -18,10 +18,12 @@ struct MallocMetadata {
     MallocMetadata* prev = nullptr;
 };
 
+MallocMetadata* firstMeta = nullptr;
+
 void* smalloc(size_t size){
     if (size <= 0) return NULL;
     if (size > MAX_SIZE) return NULL;
-    void * ptr  = firstMeta;
+    MallocMetadata * ptr  = firstMeta;
 
 //	Searches for a free block with at least
 // ‘size’ bytes or
@@ -37,7 +39,7 @@ void* smalloc(size_t size){
         else {
             ptr = ptr->next;
         }
-    } while (ptr != firstMeta)
+    } while (ptr != firstMeta);
 
 //  allocates (sbrk()) -- none are found.
     MallocMetadata* meta = (MallocMetadata*) sbrk( sizeof(MallocMetadata) + size ) ;
@@ -50,8 +52,8 @@ void* smalloc(size_t size){
     allocated_bytes += meta.size;
     if (firstMeta == nullptr) {
         firstMeta = meta;
-        meta.next = meta+sizeof(MAllocMetadata);
-        meta.prev = meta+sizeof(MAllocMetadata);
+        meta.next = meta+sizeof(MallocMetadata);
+        meta.prev = meta+sizeof(MallocMetadata);
     }
     else {
 
@@ -78,7 +80,7 @@ if(num<= 0 || size <=0 ||  size >= MAX_SIZE ||
 
 
 void sfree(void* p) {
-    if (p==nullptr || p<=sizeof(MallocMetadata) ) return NULL;
+    if (p==nullptr || p<= (void*) sizeof(MallocMetadata) ) return NULL;
     MallocMetadata* meta_ptr = p - sizeof(MallocMetadata);
     size_t total_size = meta_ptr->size + sizeof(MallocMetadata);
     meta_ptr->is_free = true;
