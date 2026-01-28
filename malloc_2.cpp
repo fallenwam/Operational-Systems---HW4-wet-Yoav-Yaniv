@@ -12,7 +12,7 @@ size_t allocated_bytes = 0;
 
 
 struct MallocMetadata {
-    size_t size;
+    size_t size = 0;
     bool is_free = false;
     MallocMetadata* next = nullptr;
     MallocMetadata* prev = nullptr;
@@ -29,7 +29,7 @@ void* smalloc(size_t size){
 // ‘size’ bytes or
     do  {
         if ( ptr !=nullptr &&
-            ptr->is_free == true &&
+            ptr->is_free &&
             ptr->size >= size) {
                 ptr->is_free = false;
                 free_blocks--;
@@ -42,18 +42,18 @@ void* smalloc(size_t size){
     } while (ptr != firstMeta);
 
 //  allocates (sbrk()) -- none are found.
-    MallocMetadata* meta = (MallocMetadata*) sbrk( sizeof(MallocMetadata) + size ) ;
+    auto* meta = (MallocMetadata*) sbrk( sizeof(MallocMetadata) + size ) ;
 	if(meta == (void*)-1 ) return NULL;
 
     ptr = meta + sizeof(MallocMetadata); // pointer to the first allocated byte within the allocated block.
 
-    meta.size = size;
+    meta->size = size;
     allocated_blocks++;
-    allocated_bytes += meta.size;
+    allocated_bytes += meta->size;
     if (firstMeta == nullptr) {
         firstMeta = meta;
-        meta.next = meta+sizeof(MallocMetadata);
-        meta.prev = meta+sizeof(MallocMetadata);
+        meta->next = meta+sizeof(MallocMetadata);
+        meta->prev = meta+sizeof(MallocMetadata);
     }
     else {
 
@@ -68,10 +68,10 @@ void* smalloc(size_t size){
 }
 void* scalloc(size_t num, size_t size){
 if(num<= 0 || size <=0 ||  size >= MAX_SIZE ||
- num*size>=MAX_SIZE ) {return NULL; }
+ num*size>=MAX_SIZE ) {return nullptr; }
 
     void* ptr = smalloc(num*size);
-	if (ptr == NULL) {return NULL; }
+	if (ptr == nullptr) {return nullptr; }
     //set to 0'z
     memset(ptr, 0, num*size);
 
@@ -80,9 +80,8 @@ if(num<= 0 || size <=0 ||  size >= MAX_SIZE ||
 
 
 void sfree(void* p) {
-    if (p==nullptr || p<= (void*) sizeof(MallocMetadata) ) return NULL;
-    MallocMetadata* meta_ptr = p - sizeof(MallocMetadata);
-    size_t total_size = meta_ptr->size + sizeof(MallocMetadata);
+    if (p==nullptr || p<= (void*) sizeof(MallocMetadata) ) return;
+    MallocMetadata* meta_ptr = (MallocMetadata*) p - sizeof(MallocMetadata);
     meta_ptr->is_free = true;
 
     free_blocks++;
@@ -91,17 +90,16 @@ void sfree(void* p) {
 
 void* srealloc(void* oldp, size_t size) {
 
-    if (size <= 0 ||size >= MAX_SIZE ) return NULL;
+    if (size <= 0 ||size >= MAX_SIZE ) return nullptr;
     if (oldp==nullptr) {
         return smalloc(size);
     }
 
-
-    MallocMetadata* old_meta_ptr = oldp - sizeof(MallocMetadata);
+    MallocMetadata* old_meta_ptr = (MallocMetadata*) oldp - sizeof(MallocMetadata);
 
     if (size <= old_meta_ptr->size) return oldp;
     void* new_ptr = smalloc(size);
-    if (new_ptr == NULL) {return NULL;}
+    if (new_ptr == nullptr) {return nullptr;}
 
 
     memmove (new_ptr,oldp,old_meta_ptr->size);
