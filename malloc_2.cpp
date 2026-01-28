@@ -21,8 +21,8 @@ struct MallocMetadata {
 MallocMetadata* firstMeta = nullptr;
 
 void* smalloc(size_t size){
-    if (size <= 0) return NULL;
-    if (size > MAX_SIZE) return NULL;
+    if (size <= 0) return nullptr;
+    if (size > MAX_SIZE) return nullptr;
     MallocMetadata* ptr  = firstMeta;
 
 //	Searches for a free block with at least
@@ -45,7 +45,7 @@ void* smalloc(size_t size){
 
 //  allocates (sbrk()) -- none are found.
     auto* meta = (MallocMetadata*) sbrk( sizeof(MallocMetadata) + size ) ;
-	if(meta == (void*)-1 ) return NULL;
+	if(meta == (void*)-1 ) return nullptr;
 
     ptr = meta + 1; // pointer to the first allocated byte within the allocated block.
 
