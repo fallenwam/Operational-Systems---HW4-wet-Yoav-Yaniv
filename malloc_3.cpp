@@ -1,3 +1,4 @@
+
 // Basic Malloc + free
 #include <iostream>
 #include <unistd.h>
@@ -45,7 +46,7 @@ void* smalloc(size_t size){
 
 //  allocates (sbrk()) -- none are found.
     auto* meta = (MallocMetadata*) sbrk( sizeof(MallocMetadata) + size ) ;
-	if(meta == (void*)-1 ) return NULL;
+    if(meta == (void*)-1 ) return NULL;
 
     ptr = meta + 1; // pointer to the first allocated byte within the allocated block.
 
@@ -70,11 +71,11 @@ void* smalloc(size_t size){
     return ptr;
 }
 void* scalloc(size_t num, size_t size){
-if(num<= 0 || size <=0 ||  size >= MAX_SIZE ||
- num*size>=MAX_SIZE ) {return nullptr; }
+    if(num<= 0 || size <=0 ||  size >= MAX_SIZE ||
+       num*size>=MAX_SIZE ) {return nullptr; }
 
     void* ptr = smalloc(num*size);
-	if (ptr == nullptr) {return nullptr; }
+    if (ptr == nullptr) {return nullptr; }
     //set to 0'z
     memset(ptr, 0, num*size);
 
