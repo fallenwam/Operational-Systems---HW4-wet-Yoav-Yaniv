@@ -1,5 +1,3 @@
-
-// Basic Malloc + free
 #include <iostream>
 #include <unistd.h>
 #include <cstring>
@@ -112,8 +110,6 @@ void* smalloc(size_t size){
     }
     if (size <= 0 || size > MAX_SIZE) return nullptr;
     size_t required_size = size + sizeof(MallocMetadata);
-    //if required > max block size, mmap (challenge 3)
-
 
     int power = find_order(required_size);
 
@@ -183,7 +179,7 @@ void* scalloc(size_t num, size_t size){
 
     void* ptr = smalloc(num*size);
     if (ptr == nullptr) {return nullptr; }
-    //set to 0'z
+    //set to 0's
     memset(ptr, 0, num*size);
 
     return ptr;
@@ -223,21 +219,20 @@ void sfree(void* p) {
     int order = find_order(meta->size);
     meta->is_free = true;
 
-    // Challenge 2: Iterative Merge
+    // Iterative Merge
     while (order < MAX_ORDER) {
         // XOR Trick to find buddy address
         auto block_addr = (intptr_t)meta;
         intptr_t buddy_addr = block_addr ^ meta->size;
         auto* buddy = (MallocMetadata*)buddy_addr;
 
-        // Check if buddy is free AND correct size
-        // (Buddy might be split, so size check is crucial)
+        // Check buddy is free and correct size
         if (!buddy->is_free || buddy->size != meta->size) {
             break;
         }
 
-        // Buddy is free! Merge.
-        remove(buddy); // Remove buddy from free list
+        // Merge - remove buddy from free list
+        remove(buddy);
 
         // Combine: The one with lower address becomes the start
         if (buddy < meta) {
@@ -262,27 +257,26 @@ void* srealloc(void* oldp, size_t size) {
 
     if (size <= old_meta_ptr->size - sizeof(MallocMetadata)) return oldp;
 
-    //not mmap
+    // Small block (not mmap)
     if(old_meta_ptr->size <= BLOCK_SIZE){
         // Check if we can obtain a large enough block by merging
         size_t possible_size = old_meta_ptr->size;
         MallocMetadata* curr = old_meta_ptr;
         bool can_merge = false;
 
-        // Loop to see if enough free buddies exist to satisfy the request
+        // Check if enough free buddies exist to satisfy request
         while (possible_size < BLOCK_SIZE && possible_size < size + sizeof(MallocMetadata)) {
             intptr_t buddy_addr = (intptr_t)curr ^ possible_size;
             MallocMetadata* buddy = (MallocMetadata*)buddy_addr;
 
-            // Check if buddy is allocated or split differently
+            // Check if buddy is allocated or different size
             if (!buddy->is_free || buddy->size != possible_size) {
                 can_merge = false;
                 break;
             }
 
-            // Hypothetically merge
             if ((MallocMetadata*)buddy_addr < curr) {
-                curr = (MallocMetadata*)buddy_addr; // Move start pointer if buddy is "left"
+                curr = (MallocMetadata*)buddy_addr; // Move start pointer if buddy smaller
             }
             possible_size *= 2;
             can_merge = true;
@@ -306,7 +300,7 @@ void* srealloc(void* oldp, size_t size) {
                 old_meta_ptr->size *= 2;
                 allocated_blocks--;
                 allocated_bytes += sizeof(MallocMetadata);
-                old_meta_ptr->is_free = false; // Ensure it stays marked as used
+                old_meta_ptr->is_free = false;
             }
             return oldp;
         }

@@ -12,7 +12,6 @@ void* smalloc(size_t size) {
     void * ptr  = nullptr;
     try {
         ptr = sbrk(size); //pointer to the first allocated byte within the allocated block.
-        //cout  << "sbrk(0) returned" << sbrk(0) << endl;
     }
     catch (...) {
         return NULL;

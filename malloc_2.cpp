@@ -26,7 +26,7 @@ void* smalloc(size_t size){
     MallocMetadata* ptr  = firstMeta;
 
 //	Searches for a free block with at least
-// ‘size’ bytes or
+// ‘size’ bytes
     if(ptr != nullptr){
         do  {
             if ( ptr !=nullptr &&
