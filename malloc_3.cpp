@@ -3,30 +3,27 @@
 #include <iostream>
 #include <unistd.h>
 #include <cstring>
-#include <math.h>
+#include <cmath>
 
 const int MAX_SIZE = 100000000;
 const int MAX_ORDER = 10;
-const size_t BLOCK_SIZE = 128 * pow(2,MAX_ORDER);
+const size_t BLOCK_SIZE = 128 * 1024;
+bool is_initialized = false;
 
 size_t free_blocks = 0;
 size_t free_bytes = 0;
 size_t allocated_blocks = 0;
 size_t allocated_bytes = 0;
 
-
 struct MallocMetadata {
     size_t size = 0;
     bool is_free = false;
-    bool is_left = false;
     MallocMetadata* next = nullptr;
     MallocMetadata* prev = nullptr;
 };
-
 MallocMetadata* free_lists[MAX_ORDER + 1] = {nullptr};
-MallocMetadata* mmap_list = nullptr;
 
-bool is_initialized = false;
+MallocMetadata* mmap_list = nullptr;
 
 
 
@@ -51,6 +48,8 @@ void insert(int index, MallocMetadata* p){
         p->prev = current;
         current->next = p;
     }
+    free_blocks++;
+    free_bytes += (p->size - sizeof(MallocMetadata));
 }
 
 void init(){
@@ -69,15 +68,12 @@ void init(){
         auto* block = (MallocMetadata*)((char*)first_block + i * BLOCK_SIZE);
         block->size = BLOCK_SIZE;
         block->is_free = true;
-        block->is_left = true;
-        free_blocks++;
-        free_bytes += (block->size - sizeof(MallocMetadata));
+        allocated_blocks++;
+        allocated_bytes += (block->size - sizeof(MallocMetadata));
         insert(MAX_ORDER, block);
     }
     is_initialized = true;
 }
-
-//TODO: remove is_left
 
 int find_order(size_t size){
     int order = 0;
@@ -90,9 +86,6 @@ int find_order(size_t size){
 }
 
 void remove(MallocMetadata* ptr){
-    MallocMetadata* prev_elem = ptr->prev;
-    MallocMetadata* next_elem = ptr->next;
-
     int order = find_order(ptr->size);
 
     if (ptr->prev == nullptr) {
@@ -108,8 +101,9 @@ void remove(MallocMetadata* ptr){
 
     ptr->next = nullptr;
     ptr->prev = nullptr;
+    free_blocks--;
+    free_bytes -= (ptr->size - sizeof(MallocMetadata));
 }
-
 
 void* smalloc(size_t size){
     if (size <= 0 || size > MAX_SIZE) return nullptr;
@@ -123,27 +117,27 @@ void* smalloc(size_t size){
     int power = find_order(required_size);
 
     // large block
-    if (required_size >= BLOCK_SIZE ) {
+    if (required_size > BLOCK_SIZE ) {
         void* out = nullptr;
 
-        out = (void*) mmap(NULL, pow(2,power), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS,
+        //TODO:change required to a multiple of page size
+        out = (void*) mmap(NULL, required_size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS,
             -1, 0);
         if (out == (void*) -1) {
             return nullptr;
         }
         auto* meta = (MallocMetadata*) out;
-        meta->size= size;
-        meta->is_free= false;
         meta->size = required_size;
+        meta->is_free = false;
 
         // add to list of allocated
-        meta->prev= nullptr;
+        meta->prev = nullptr;
+        meta->next = mmap_list;
         if (mmap_list !=nullptr) {
-            meta->next= mmap_list;
             mmap_list->prev= meta;
         }
         mmap_list = meta;
-        return meta;
+        return (void*)(meta + 1);
     }
 
     //small block
@@ -160,10 +154,8 @@ void* smalloc(size_t size){
     MallocMetadata* output = free_lists[current_power];
     remove(output);
     output->is_free = false; //TODO: remove this field entirely
-    free_blocks--;
-    free_bytes -= (output->size - sizeof(MallocMetadata));
 
-
+    //split
     while(current_power > power){
         current_power--;
         size_t new_size = output->size / 2;
@@ -171,17 +163,14 @@ void* smalloc(size_t size){
         auto* buddy = (MallocMetadata*)((char*)output + new_size);
         buddy->size = new_size;
         buddy->is_free = true;
-        buddy->is_left = false;
         insert(current_power, buddy);
-
-        free_blocks++;
-        free_bytes += (buddy->size - sizeof(MallocMetadata));
 
         output->size = new_size;
         allocated_blocks++;
     }
     return output + 1;
 }
+
 void* scalloc(size_t num, size_t size){
     if(num<= 0 || size <=0 ||  size >= MAX_SIZE ||
        num*size>=MAX_SIZE ) {return nullptr; }
@@ -198,42 +187,38 @@ void sfree(void* p) {
     if (p==nullptr || p<= (void*) sizeof(MallocMetadata) ) return;
     MallocMetadata* meta = (MallocMetadata*)p - 1;
 
-    //TODO: munmap
-    if (meta->size >= BLOCK_SIZE) {
+    if (meta->size > BLOCK_SIZE) {
         MallocMetadata* prev_elem = meta->prev;
         MallocMetadata* next_elem = meta->next;
 
-        if (meta->prev == nullptr) {
+        if (prev_elem == nullptr) {
             // meta is the head, update the array
-            mmap_list = meta->next;
+            mmap_list = next_elem;
         } else {
-            meta->prev->next = meta->next;
+            prev_elem->next = next_elem;
         }
 
-        if(meta->next != nullptr){
-            meta->next->prev = meta->prev;
+        if(next_elem != nullptr){
+            next_elem->prev = prev_elem;
         }
 
         meta->next = nullptr;
         meta->prev = nullptr;
+        munmap(meta, meta->size);
+        return;
     }
 
     if (meta->is_free) return; // Double free protection
 
     int order = find_order(meta->size);
     meta->is_free = true;
-    allocated_blocks--;
-    allocated_bytes -= (meta->size - sizeof(MallocMetadata));
-
-    // Add to stats before merging (will be adjusted in merge)
-    // Actually, logic is easier if we just try to merge immediately
 
     // Challenge 2: Iterative Merge
     while (order < MAX_ORDER) {
         // XOR Trick to find buddy address
-        intptr_t block_addr = (intptr_t)meta;
+        auto block_addr = (intptr_t)meta;
         intptr_t buddy_addr = block_addr ^ meta->size;
-        MallocMetadata* buddy = (MallocMetadata*)buddy_addr;
+        auto* buddy = (MallocMetadata*)buddy_addr;
 
         // Check if buddy is free AND correct size
         // (Buddy might be split, so size check is crucial)
@@ -244,35 +229,78 @@ void sfree(void* p) {
         // Buddy is free! Merge.
         remove(buddy); // Remove buddy from free list
 
-        // Stats update: We lose one free block (the buddy)
-        free_blocks--;
-        free_bytes -= (buddy->size - sizeof(MallocMetadata));
-
         // Combine: The one with lower address becomes the start
         if (buddy < meta) {
             meta = buddy;
         }
 
         meta->size *= 2;
+        allocated_blocks--;
         order++;
     }
 
     // Insert the final merged block
     insert(order, meta);
-    free_blocks++;
-    free_bytes += (meta->size - sizeof(MallocMetadata));
 }
 
 void* srealloc(void* oldp, size_t size) {
-
     if (size <= 0 ||size >= MAX_SIZE ) return nullptr;
-    if (oldp==nullptr) {
-        return smalloc(size);
-    }
+    if (oldp==nullptr) return smalloc(size);
 
     MallocMetadata* old_meta_ptr = (MallocMetadata*) oldp - 1;
 
     if (size <= old_meta_ptr->size - sizeof(MallocMetadata)) return oldp;
+
+    //not mmap
+    if(old_meta_ptr->size <= BLOCK_SIZE){
+        // Check if we can obtain a large enough block by merging
+        size_t possible_size = old_meta_ptr->size;
+        MallocMetadata* curr = old_meta_ptr;
+        bool can_merge = false;
+
+        // Loop to see if enough free buddies exist to satisfy the request
+        while (possible_size < BLOCK_SIZE && possible_size < size + sizeof(MallocMetadata)) {
+            intptr_t buddy_addr = (intptr_t)curr ^ possible_size;
+            MallocMetadata* buddy = (MallocMetadata*)buddy_addr;
+
+            // Check if buddy is allocated or split differently
+            if (!buddy->is_free || buddy->size != possible_size) {
+                can_merge = false;
+                break;
+            }
+
+            // Hypothetically merge
+            if ((MallocMetadata*)buddy_addr < curr) {
+                curr = (MallocMetadata*)buddy_addr; // Move start pointer if buddy is "left"
+            }
+            possible_size *= 2;
+            can_merge = true;
+        }
+
+        // If large enough, merge all and reuse
+        if (can_merge && possible_size >= size + sizeof(MallocMetadata)) {
+            // Do merges
+            while (old_meta_ptr->size < possible_size) {
+                intptr_t buddy_addr = (intptr_t)old_meta_ptr ^ old_meta_ptr->size;
+                auto* buddy = (MallocMetadata*)buddy_addr;
+
+                remove(buddy); // Remove free buddy from list
+
+                if (buddy < old_meta_ptr) {
+                    old_meta_ptr = buddy; // Determine new start
+                    memmove(old_meta_ptr + 1, oldp, old_meta_ptr->size - sizeof(MallocMetadata)); // Move data if address changed
+                    oldp = old_meta_ptr + 1;
+                }
+
+                old_meta_ptr->size *= 2;
+                allocated_blocks--;
+                old_meta_ptr->is_free = false; // Ensure it stays marked as used
+            }
+            return oldp;
+        }
+    }
+
+    // Allocate new if we can't merge
     void* new_ptr = smalloc(size);
     if (new_ptr == nullptr) {return nullptr;}
 
