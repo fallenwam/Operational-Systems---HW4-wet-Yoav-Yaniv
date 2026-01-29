@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <cstring>
 #include <cmath>
+#include <sys/mman.h>
 
 const int MAX_SIZE = 100000000;
 const int MAX_ORDER = 10;

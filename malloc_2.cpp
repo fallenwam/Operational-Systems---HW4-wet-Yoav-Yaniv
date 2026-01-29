@@ -85,6 +85,9 @@ if(num<= 0 || size <=0 ||  size >= MAX_SIZE ||
 void sfree(void* p) {
     if (p==nullptr || p<= (void*) sizeof(MallocMetadata) ) return;
     MallocMetadata* meta_ptr = (MallocMetadata*) p - 1;
+    if(meta_ptr->is_free){
+        return;
+    }
     meta_ptr->is_free = true;
 
     free_blocks++;
