@@ -24,6 +24,7 @@ struct MallocMetadata {
 };
 
 MallocMetadata* free_lists[MAX_ORDER + 1] = {nullptr};
+MallocMetadata* mmap_list = nullptr;
 
 bool is_initialized = false;
 
@@ -33,12 +34,14 @@ void insert(int index, MallocMetadata* p){
     MallocMetadata* current = free_lists[index];
     if(current == nullptr){
         free_lists[index] = p;
+        p->next = nullptr;
+        p->prev = nullptr;
     }
     else{
-        while(current->next <= p){
+        while(current->next != nullptr && current->next < p){
             current = current->next;
         }
-
+        // Insert p after current
         MallocMetadata* next_elem = current->next;
 
         if(next_elem != nullptr){
@@ -90,15 +93,21 @@ void remove(MallocMetadata* ptr){
     MallocMetadata* prev_elem = ptr->prev;
     MallocMetadata* next_elem = ptr->next;
 
-    if(next_elem != nullptr){
-        next_elem->prev = prev_elem;
+    int order = find_order(ptr->size);
+
+    if (ptr->prev == nullptr) {
+        // ptr is the head, update the array
+        free_lists[order] = ptr->next;
+    } else {
+        ptr->prev->next = ptr->next;
     }
-    if(prev_elem != nullptr){
-        prev_elem->next = next_elem;
+
+    if(ptr->next != nullptr){
+        ptr->next->prev = ptr->prev;
     }
-    if (prev_elem == nullptr && next_elem == nullptr){
-        free_lists[find_order(ptr->size)] = nullptr;
-    }
+
+    ptr->next = nullptr;
+    ptr->prev = nullptr;
 }
 
 
@@ -113,6 +122,31 @@ void* smalloc(size_t size){
 
     int power = find_order(required_size);
 
+    // large block
+    if (required_size >= BLOCK_SIZE ) {
+        void* out = nullptr;
+
+        out = (void*) mmap(NULL, pow(2,power), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS,
+            -1, 0);
+        if (out == (void*) -1) {
+            return nullptr;
+        }
+        auto* meta = (MallocMetadata*) out;
+        meta->size= size;
+        meta->is_free= false;
+        meta->size = required_size;
+
+        // add to list of allocated
+        meta->prev= nullptr;
+        if (mmap_list !=nullptr) {
+            meta->next= mmap_list;
+            mmap_list->prev= meta;
+        }
+        mmap_list = meta;
+        return meta;
+    }
+
+    //small block
     int current_power = power;
     while (current_power <= MAX_ORDER && free_lists[current_power] == nullptr) {
         current_power++;
@@ -164,12 +198,29 @@ void sfree(void* p) {
     if (p==nullptr || p<= (void*) sizeof(MallocMetadata) ) return;
     MallocMetadata* meta = (MallocMetadata*)p - 1;
 
+    //TODO: munmap
+    if (meta->size >= BLOCK_SIZE) {
+        MallocMetadata* prev_elem = meta->prev;
+        MallocMetadata* next_elem = meta->next;
+
+        if (meta->prev == nullptr) {
+            // meta is the head, update the array
+            mmap_list = meta->next;
+        } else {
+            meta->prev->next = meta->next;
+        }
+
+        if(meta->next != nullptr){
+            meta->next->prev = meta->prev;
+        }
+
+        meta->next = nullptr;
+        meta->prev = nullptr;
+    }
+
     if (meta->is_free) return; // Double free protection
 
     int order = find_order(meta->size);
-    meta->is_free = true;
-    insert(order,meta);
-
     meta->is_free = true;
     allocated_blocks--;
     allocated_bytes -= (meta->size - sizeof(MallocMetadata));
