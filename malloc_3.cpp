@@ -107,10 +107,10 @@ void remove(MallocMetadata* ptr){
 }
 
 void* smalloc(size_t size){
-    if (size <= 0 || size > MAX_SIZE) return nullptr;
     if(!is_initialized){
         init();
     }
+    if (size <= 0 || size > MAX_SIZE) return nullptr;
     size_t required_size = size + sizeof(MallocMetadata);
     //if required > max block size, mmap (challenge 3)
 
@@ -138,6 +138,10 @@ void* smalloc(size_t size){
             mmap_list->prev= meta;
         }
         mmap_list = meta;
+
+        allocated_blocks++;
+        allocated_bytes += size;
+
         return (void*)(meta + 1);
     }
 
@@ -168,6 +172,7 @@ void* smalloc(size_t size){
 
         output->size = new_size;
         allocated_blocks++;
+        allocated_bytes -= sizeof(MallocMetadata);
     }
     return output + 1;
 }
@@ -205,7 +210,11 @@ void sfree(void* p) {
 
         meta->next = nullptr;
         meta->prev = nullptr;
+        allocated_blocks--;
+        allocated_bytes -= (meta->size - sizeof(MallocMetadata));
         munmap(meta, meta->size);
+
+
         return;
     }
 
@@ -237,6 +246,7 @@ void sfree(void* p) {
 
         meta->size *= 2;
         allocated_blocks--;
+        allocated_bytes += sizeof(MallocMetadata);
         order++;
     }
 
@@ -295,6 +305,7 @@ void* srealloc(void* oldp, size_t size) {
 
                 old_meta_ptr->size *= 2;
                 allocated_blocks--;
+                allocated_bytes += sizeof(MallocMetadata);
                 old_meta_ptr->is_free = false; // Ensure it stays marked as used
             }
             return oldp;

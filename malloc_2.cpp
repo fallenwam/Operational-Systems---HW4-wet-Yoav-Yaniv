@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <cstring>
 
-const int MAX_SIZE = 100000000;
+const int MAX_SIZE = 1e8;
 
 size_t free_blocks = 0;
 size_t free_bytes = 0;
@@ -70,8 +70,8 @@ void* smalloc(size_t size){
     return ptr;
 }
 void* scalloc(size_t num, size_t size){
-if(num<= 0 || size <=0 ||  size >= MAX_SIZE ||
- num*size>=MAX_SIZE ) {return nullptr; }
+if(num<= 0 || size <=0 ||  size > MAX_SIZE ||
+ num*size > MAX_SIZE ) {return nullptr; }
 
     void* ptr = smalloc(num*size);
 	if (ptr == nullptr) {return nullptr; }
@@ -96,7 +96,7 @@ void sfree(void* p) {
 
 void* srealloc(void* oldp, size_t size) {
 
-    if (size <= 0 ||size >= MAX_SIZE ) return nullptr;
+    if (size <= 0 || size > MAX_SIZE ) return nullptr;
     if (oldp==nullptr) {
         return smalloc(size);
     }
